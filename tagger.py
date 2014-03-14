@@ -267,7 +267,7 @@ def vorbis_to_id3(vorbis):
     def split_numeric_part(value, prev_number, prev_total):
         if '/' in value:
             return [int(x) for x in value.split('/', 1)]
-        return [int(tval), prev_total]
+        return [int(value), prev_total]
     for tkey, tvals in vorbis.items():
         lkey = tkey.lower()
         for tval in tvals:
