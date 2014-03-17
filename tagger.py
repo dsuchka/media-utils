@@ -249,7 +249,7 @@ vorbis_to_text_tags = {
     'lyricist':         [mutagen.id3.TEXT, None     ],
     'discsubtitle':     [mutagen.id3.TSST, None     ],
     'genre':            [mutagen.id3.TCON, '\xa9gen'],
-    'date':             [None            , '\xa9day'],
+    'date':             [mutagen.id3.TDRC, '\xa9day'],
     'mood':             [mutagen.id3.TMOO, None     ],
     'isrc':             [mutagen.id3.TSRC, None     ],
     'copyright':        [mutagen.id3.TCOP, 'cprt'   ],
