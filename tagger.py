@@ -341,7 +341,12 @@ if options.tag:
     try:
         for pair in options.tag:
             k, v = pair.split('=', 1)
-            fixed_tags[k] = v
+            if fixed_tags.has_key(k):
+                if not isinstance(fixed_tags[k], list):
+                    fixed_tags[k] = [fixed_tags[k]]
+                fixed_tags[k].append(v)
+            else:
+                fixed_tags[k] = v
     except Exception, e:
         showErrAsk('Invalid tag pair: %s: %s', (pair, e))
 
