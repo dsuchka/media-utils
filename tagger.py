@@ -243,6 +243,7 @@ vorbis_to_text_tags = {
     'subtitle':         [mutagen.id3.TIT3, None     ],
     'artist':           [mutagen.id3.TPE1, '\xa9ART'],
     'albumartist':      [mutagen.id3.TPE2, 'aART'   ],
+    'performer':        [mutagen.id3.TMCL, None     ],
     'conductor':        [mutagen.id3.TPE3, None     ],
     'remixer':          [mutagen.id3.TPE4, None     ],
     'composer':         [mutagen.id3.TCOM, '\xa9wrt'],
@@ -285,33 +286,35 @@ def vorbis_to_tags(vorbis, tags_type):
         return [int(value), prev_total]
     for tkey, tvals in vorbis.items():
         lkey = tkey.lower()
-        for tval in tvals:
+        if tvals:
+            tval_last = tvals[-1]
             if lkey == 'tracknumber':
-                track_number, track_total = split_numeric_part(tval, track_number, track_total)
+                track_number, track_total = split_numeric_part(tval_last, track_number, track_total)
             elif lkey == 'tracktotal' or lkey == 'totaltracks':
-                track_total = int(tval)
+                track_total = int(tval_last)
             elif lkey == 'discnumber':
-                disc_number, disc_total = split_numeric_part(tval, disc_number, disc_total)
+                disc_number, disc_total = split_numeric_part(tval_last, disc_number, disc_total)
             elif lkey == 'disctotal' or lkey == 'totaldiscs':
-                disc_total = int(tval)
+                disc_total = int(tval_last)
             else:
                 xval = vorbis_to_text_tags.get(lkey, None)
                 xtag = xval[tags_type] if xval is not None else None
                 if xtag is not None:
                     if tags_type == TAGS_ID3:
+                        final_tvals = tvals
                         if lkey == 'date':
-                            tval = mutagen.id3.ID3TimeStamp(tval)
-                        out_tags[xtag.__name__] = xtag(encoding=3, text=[tval])
+                            final_tvals = [mutagen.id3.ID3TimeStamp(tval_last)]
+                        out_tags[xtag.__name__] = xtag(encoding=3, text=final_tvals)
                     elif tags_type == TAGS_MP4:
-                        out_tags[xtag] = [tval]
+                        out_tags[xtag] = tvals
                 else:
                     tkey_up = tkey.upper()
                     if tags_type == TAGS_ID3:
                         out_tags['TXXX:' + tkey_up] = \
-                            mutagen.id3.TXXX(encoding=3, desc=tkey_up, text=[tval])
+                            mutagen.id3.TXXX(encoding=3, desc=tkey_up, text=tvals)
                     elif tags_type == TAGS_MP4:
                         out_tags['----:com.apple.iTunes:' + tkey_up] = \
-                            [tval]
+                            tvals
     def to_numeric_part(number, total):
         if number is None:
             return None
