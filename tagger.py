@@ -262,6 +262,10 @@ vorbis_to_text_tags = {
     'titlesort':        [mutagen.id3.TSOT, 'sonm'   ],
 }
 
+vorbis_to_text_pair_tags = {
+    'performer':        [mutagen.id3.TMCL, None,    re.compile(r'^(?P<v>.*?)(?:\s*\((?P<k>.*)\))?$')],
+}
+
 #
 ## supported tags (vorbis is basic and internal format)
 #
@@ -307,14 +311,32 @@ def vorbis_to_tags(vorbis, tags_type):
                         out_tags[xtag.__name__] = xtag(encoding=3, text=final_tvals)
                     elif tags_type == TAGS_MP4:
                         out_tags[xtag] = tvals
-                else:
-                    tkey_up = tkey.upper()
+                    continue
+
+                xval = vorbis_to_text_pair_tags.get(lkey, None)
+                xtag = xval[tags_type] if xval is not None else None
+                if xtag is not None:
+                    fmt = xval[-1]
+                    def decode_tag_pair(val):
+                        m = fmt.match(val)
+                        if not m:
+                            return ('', val)
+                        k, v = m.group('k', 'v')
+                        return (k or '', v or '')
+                    final_tvals = [decode_tag_pair(tval) for tval in tvals]
                     if tags_type == TAGS_ID3:
-                        out_tags['TXXX:' + tkey_up] = \
-                            mutagen.id3.TXXX(encoding=3, desc=tkey_up, text=tvals)
+                        out_tags[xtag.__name__] = xtag(encoding=3, people=final_tvals)
                     elif tags_type == TAGS_MP4:
-                        out_tags['----:com.apple.iTunes:' + tkey_up] = \
-                            tvals
+                        out_tags[xtag] = final_tvals # ? supported ?
+                    continue
+
+                tkey_up = tkey.upper()
+                if tags_type == TAGS_ID3:
+                    out_tags['TXXX:' + tkey_up] = \
+                        mutagen.id3.TXXX(encoding=3, desc=tkey_up, text=tvals)
+                elif tags_type == TAGS_MP4:
+                    out_tags['----:com.apple.iTunes:' + tkey_up] = \
+                        tvals
     def to_numeric_part(number, total):
         if number is None:
             return None
