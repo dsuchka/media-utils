@@ -9,6 +9,7 @@ import optparse
 
 from mutagen._vorbis import VCommentDict 
 from mutagen.id3 import ID3
+from mutagen.mp4 import MP4Tags
 
 from dzh.inspectInfo import *
 from dzh.interactive import *
@@ -233,33 +234,47 @@ class TocMetaLoader(DescMetaLoader):
         return 0
 
 #
-## vorbis <==> id3
+## vorbis <==> [id3(tags), mp4(keys)]
 #
-vorbis_to_id3_text_frame = {
-    'album':            mutagen.id3.TALB,
-    'grouping':         mutagen.id3.TIT1,
-    'title':            mutagen.id3.TIT2,
-    'subtitle':         mutagen.id3.TIT3,
-    'artist':           mutagen.id3.TPE1,
-    'albumartist':      mutagen.id3.TPE2,
-    'conductor':        mutagen.id3.TPE3,
-    'remixer':          mutagen.id3.TPE4,
-    'composer':         mutagen.id3.TCOM,
-    'lyricist':         mutagen.id3.TEXT,
-    'discsubtitle':     mutagen.id3.TSST,
-    'genre':            mutagen.id3.TCON,
-    'mood':             mutagen.id3.TMOO,
-    'isrc':             mutagen.id3.TSRC,
-    'copyright':        mutagen.id3.TCOP,
-    'media':            mutagen.id3.TMED,
-    'label':            mutagen.id3.TPUB,
-    'encodedby':        mutagen.id3.TENC,
-    'albumsort':        mutagen.id3.TSOA,
-    'artistsort':       mutagen.id3.TSOP,
-    'titlesort':        mutagen.id3.TSOT,
+vorbis_to_text_tags = {
+    'album':            [mutagen.id3.TALB, '\xa9alb'],
+    'grouping':         [mutagen.id3.TIT1, '\xa9grp'],
+    'title':            [mutagen.id3.TIT2, '\xa9nam'],
+    'subtitle':         [mutagen.id3.TIT3, None     ],
+    'artist':           [mutagen.id3.TPE1, '\xa9ART'],
+    'albumartist':      [mutagen.id3.TPE2, 'aART'   ],
+    'conductor':        [mutagen.id3.TPE3, None     ],
+    'remixer':          [mutagen.id3.TPE4, None     ],
+    'composer':         [mutagen.id3.TCOM, '\xa9wrt'],
+    'lyricist':         [mutagen.id3.TEXT, None     ],
+    'discsubtitle':     [mutagen.id3.TSST, None     ],
+    'genre':            [mutagen.id3.TCON, '\xa9gen'],
+    'date':             [mutagen.id3.TDRC, '\xa9day'],
+    'mood':             [mutagen.id3.TMOO, None     ],
+    'isrc':             [mutagen.id3.TSRC, None     ],
+    'copyright':        [mutagen.id3.TCOP, 'cprt'   ],
+    'media':            [mutagen.id3.TMED, None     ],
+    'label':            [mutagen.id3.TPUB, None     ],
+    'encodedby':        [mutagen.id3.TENC, '\xa9too'],
+    'albumsort':        [mutagen.id3.TSOA, 'soal'   ],
+    'artistsort':       [mutagen.id3.TSOP, 'soar'   ],
+    'titlesort':        [mutagen.id3.TSOT, 'sonm'   ],
 }
-def vorbis_to_id3(vorbis):
-    id3 = ID3()
+
+#
+## supported tags (vorbis is basic and internal format)
+#
+(   TAGS_ID3,
+    TAGS_MP4,
+) = range(2)
+
+def vorbis_to_tags(vorbis, tags_type):
+    if tags_type == TAGS_ID3:
+        out_tags = ID3()
+    elif tags_type == TAGS_MP4:
+        out_tags = MP4Tags()
+    else:
+        raise ValueError("unsupported tags type: 0x%x" % tags_type)
     track_number = None
     track_total = None
     disc_number = None
@@ -279,15 +294,24 @@ def vorbis_to_id3(vorbis):
                 disc_number, disc_total = split_numeric_part(tval, disc_number, disc_total)
             elif lkey == 'disctotal' or lkey == 'totaldiscs':
                 disc_total = int(tval)
-            elif lkey == 'date':
-                id3stamp = mutagen.id3.ID3TimeStamp(tval)
-                id3['TDRC'] = mutagen.id3.TDRC(encoding=3, text=[id3stamp])
             else:
-                xtag = vorbis_to_id3_text_frame.get(lkey, None)
+                xval = vorbis_to_text_tags.get(lkey, None)
+                xtag = xval[tags_type] if xval is not None else None
                 if xtag is not None:
-                    id3[xtag.__name__] = xtag(encoding=3, text=[tval])
+                    if tags_type == TAGS_ID3:
+                        if lkey == 'date':
+                            tval = mutagen.id3.ID3TimeStamp(tval)
+                        out_tags[xtag.__name__] = xtag(encoding=3, text=[tval])
+                    elif tags_type == TAGS_MP4:
+                        out_tags[xtag] = [tval]
                 else:
-                    id3['TXXX:'+tkey] = mutagen.id3.TXXX(encoding=3, desc=tkey, text=[tval])
+                    tkey_up = tkey.upper()
+                    if tags_type == TAGS_ID3:
+                        out_tags['TXXX:' + tkey_up] = \
+                            mutagen.id3.TXXX(encoding=3, desc=tkey_up, text=[tval])
+                    elif tags_type == TAGS_MP4:
+                        out_tags['----:com.apple.iTunes:' + tkey_up] = \
+                            [tval]
     def to_numeric_part(number, total):
         if number is None:
             return None
@@ -296,35 +320,69 @@ def vorbis_to_id3(vorbis):
             val += '/%02d' % total
         return val
     if track_number:
-        track = to_numeric_part(track_number, track_total)
-        id3['TRCK'] = mutagen.id3.TRCK(encoding=3, text=[track])
+        if tags_type == TAGS_ID3:
+            track = to_numeric_part(track_number, track_total)
+            out_tags['TRCK'] = mutagen.id3.TRCK(encoding=3, text=[track])
+        elif tags_type == TAGS_MP4:
+            out_tags['trkn'] = [(track_number, track_total or 0)]
     if disc_number:
-        disc = to_numeric_part(disc_number, disc_total)
-        id3['TPOS'] = mutagen.id3.TPOS(encoding=3, text=[disc])
-    return id3
+        if tags_type == TAGS_ID3:
+            disc = to_numeric_part(disc_number, disc_total)
+            out_tags['TPOS'] = mutagen.id3.TPOS(encoding=3, text=[disc])
+        elif tags_type == TAGS_MP4:
+            out_tags['disk'] = [(disc_number, disc_total or 0)]
+    return out_tags
 
-id3_to_vorbis_text_frame = dict(zip(*(zip(*vorbis_to_id3_text_frame.items()).__reversed__())))
-def id3_to_vorbis(id3):
-    tags = VCommentDict()
-    for val in id3.values():
-        tf = id3_to_vorbis_text_frame.get(val.__class__, None)
+def reversed_text_tags_map(tags_type):
+    return dict(zip(*(zip(*[
+                (k, l[tags_type]) for (k, l) in vorbis_to_text_tags.items()
+            ]).__reversed__())))
+id3_to_vorbis_text_frame = reversed_text_tags_map(TAGS_ID3)
+mp4_to_vorbis_text_frame = reversed_text_tags_map(TAGS_MP4)
+
+def tags_to_vorbis(tags, tags_type):
+    out_tags = VCommentDict()
+    for tkey, tval in tags.items():
         key = None
-        to_text = lambda x: x
-        if tf:
-            key = tf
-        elif isinstance(val, mutagen.id3.TXXX):
-            key = val.desc
-        elif isinstance(val, mutagen.id3.TRCK):
-            key = 'tracknumber'
-        elif isinstance(val, mutagen.id3.TPOS):
-            key = 'discnumber'
-        elif isinstance(val, mutagen.id3.TDRC):
-            key = 'date'
-            to_text = lambda x: x.text
-        if key:
-            for txt in val.text:
-                tags.append((key, to_text(txt)))
-    return tags
+        if tags_type == TAGS_ID3:
+            tf = id3_to_vorbis_text_frame.get(tval.__class__, None)
+            to_text = lambda x: x
+            if tf:
+                key = tf
+            elif isinstance(tval, mutagen.id3.TXXX):
+                key = tval.desc
+            elif isinstance(tval, mutagen.id3.TRCK):
+                key = 'tracknumber'
+            elif isinstance(tval, mutagen.id3.TPOS):
+                key = 'discnumber'
+            elif isinstance(tval, mutagen.id3.TDRC):
+                key = 'date'
+                to_text = lambda x: x.text
+            if key:
+                for txt in tval.text:
+                    out_tags.append((key, to_text(txt)))
+        elif tags_type == TAGS_MP4:
+            def append_numtot_pairs(num_name, tot_name, pairs):
+                for num_tot in pairs:
+                    (num, tot) = num_tot if len(num_tot) > 1 else (num_tot[0], None)
+                    out_tags.append((num_name, str(num)))
+                    if tot:
+                        out_tags.append((tot_name, str(tot)))
+            tf = mp4_to_vorbis_text_frame.get(tkey, None)
+            if tf:
+                key = tf
+            elif tkey.startswith('----:com.apple.iTunes:'):
+                key = tkey.split(':', 2)[2]
+            elif tkey == 'trkn':
+                append_numtot_pairs('tracknumber', 'tracktotal', tval)
+            elif tkey == 'disk':
+                append_numtot_pairs('discnumber', 'disctotal', tval)
+            if key:
+                for txt in tval:
+                    out_tags.append((key, txt))
+        else:
+            raise ValueError("unsupported tags type: 0x%x" % tags_type)
+    return out_tags
 
 #
 ## prepare settings
@@ -341,7 +399,12 @@ if options.tag:
     try:
         for pair in options.tag:
             k, v = pair.split('=', 1)
-            fixed_tags[k] = v
+            if fixed_tags.has_key(k):
+                if not isinstance(fixed_tags[k], list):
+                    fixed_tags[k] = [fixed_tags[k]]
+                fixed_tags[k].append(v)
+            else:
+                fixed_tags[k] = v
     except Exception, e:
         showErrAsk('Invalid tag pair: %s: %s', (pair, e))
 
@@ -359,7 +422,9 @@ def load_meta_from_src_file(vorbis, path, save=False):
         if isinstance(f.tags, VCommentDict):
             tags = f.tags
         elif isinstance(f.tags, ID3):
-            tags = id3_to_vorbis(f.tags)
+            tags = tags_to_vorbis(f.tags, TAGS_ID3)
+        elif isinstance(f.tags, MP4Tags):
+            tags = tags_to_vorbis(f.tags, TAGS_MP4)
         else:
             raise ValueError('current release supports only vorbis comment or mp3 (id3),'
                 ' but file(%s) contains: %s' % (path, f.tags.__class__.__name__))
@@ -497,7 +562,9 @@ for arg in args:
         if isinstance(f.tags, VCommentDict):
             f.tags.update(vorbis)
         elif isinstance(f.tags, ID3):
-            f.tags.update(vorbis_to_id3(vorbis))
+            f.tags.update(vorbis_to_tags(vorbis, TAGS_ID3))
+        elif isinstance(f.tags, MP4Tags):
+            f.tags.update(vorbis_to_tags(vorbis, TAGS_MP4))
         else:
             raise ValueError("not supported meta-type: %s" % f.tags.__class__.__name__)
         f.save()
