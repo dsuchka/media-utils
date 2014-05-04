@@ -243,6 +243,7 @@ vorbis_to_text_tags = {
     'subtitle':         [mutagen.id3.TIT3, None     ],
     'artist':           [mutagen.id3.TPE1, '\xa9ART'],
     'albumartist':      [mutagen.id3.TPE2, 'aART'   ],
+    'performer':        [mutagen.id3.TMCL, None     ],
     'conductor':        [mutagen.id3.TPE3, None     ],
     'remixer':          [mutagen.id3.TPE4, None     ],
     'composer':         [mutagen.id3.TCOM, '\xa9wrt'],
